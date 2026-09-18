@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScrollCal · 滚动日历 — macOS 菜单栏日历</title>
+<meta name="description" content="ScrollCal 是一个轻量的 macOS 菜单栏日历：点一下弹出、连续滚动、一屏一个月，带农历、二十四节气和节日。纯 SwiftUI，无第三方依赖。">
+<meta property="og:title" content="ScrollCal · 滚动日历">
+<meta property="og:description" content="macOS 菜单栏日历：连续滚动、一屏一个月，带农历 / 二十四节气 / 节日。纯 SwiftUI，无第三方依赖。">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/icon.png">
+<link rel="icon" href="assets/favicon.png">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --bg-card: #ffffff;
+    --text: #1c1c1e;
+    --text-soft: #5f6368;
+    --text-faint: #8a8f98;
+    --line: rgba(0, 0, 0, .09);
+    --accent: #0f66e6;
+    --accent-soft: rgba(15, 102, 230, .10);
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0f12;
+      --bg-card: #16181d;
+      --text: #f2f3f5;
+      --text-soft: #a9afb8;
+      --text-faint: #767d88;
+      --line: rgba(255, 255, 255, .10);
+      --accent: #5ca1ff;
+      --accent-soft: rgba(92, 161, 255, .14);
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.5);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 0 20px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0; border-bottom: 1px solid var(--line);
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  header .brand img { width: 26px; height: 26px; border-radius: 7px; }
+  header nav { display: flex; gap: 18px; font-size: 14px; }
+  header nav a { color: var(--text-soft); }
+  header nav a:hover { color: var(--text); text-decoration: none; }
+
+  .hero { display: flex; align-items: center; gap: 40px; padding: 64px 0 48px; flex-wrap: wrap; }
+  .hero .copy { flex: 1 1 380px; }
+  .hero img.appicon { width: 112px; height: 112px; border-radius: 24px; box-shadow: var(--shadow); }
+  h1 { font-size: 40px; line-height: 1.2; margin: 0 0 12px; letter-spacing: -.02em; }
+  .tagline { font-size: 17px; color: var(--text-soft); margin: 0 0 26px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+  .badge {
+    font-size: 12px; color: var(--text-soft); background: var(--bg-card);
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+  }
+  .buttons { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 20px; border-radius: 11px; font-weight: 600; font-size: 15px;
+    border: 1px solid transparent; transition: transform .12s ease, opacity .12s ease;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-1px); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-secondary { background: var(--bg-card); color: var(--text); border-color: var(--line); }
+  .hint { font-size: 13px; color: var(--text-faint); margin-top: 14px; }
+
+  section { padding: 44px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.01em; }
+  .sub { color: var(--text-soft); font-size: 15px; margin: 0 0 24px; }
+
+  .shots { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
+  .shots figure { margin: 0; text-align: center; }
+  .shots img {
+    width: 268px; height: auto; border-radius: 12px;
+    border: 1px solid var(--line); box-shadow: var(--shadow);
+  }
+  .shots figcaption { font-size: 13px; color: var(--text-faint); margin-top: 10px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0; font-size: 14px; color: var(--text-soft); }
+
+  ol.steps { padding-left: 20px; }
+  ol.steps li { margin-bottom: 10px; }
+  .note {
+    background: var(--accent-soft); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 18px; font-size: 14px; color: var(--text-soft);
+  }
+  .note strong { color: var(--text); }
+  code, pre {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 13px;
+  }
+  code { background: var(--accent-soft); padding: 2px 6px; border-radius: 5px; }
+  pre {
+    background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; overflow-x: auto; line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--text-faint); font-weight: 600; font-size: 13px; }
+  td:first-child { white-space: nowrap; color: var(--text-soft); }
+
+  footer {
+    border-top: 1px solid var(--line); padding: 30px 0 50px;
+    color: var(--text-faint); font-size: 13px;
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <img src="assets/icon.png" alt="">
+      <span>ScrollCal</span>
+    </div>
+    <nav>
+      <a href="#features">特性</a>
+      <a href="#install">安装</a>
+      <a href="#build">从源码构建</a>
+      <a href="https://github.com/KatouMegumii/ScrollCal">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <img class="appicon" src="assets/icon.png" alt="ScrollCal 图标">
+    <div class="copy">
+      <h1>ScrollCal · 滚动日历</h1>
+      <p class="tagline">
+        点一下弹出、连续滚动、一屏一个月。带农历、二十四节气和节日的原生 macOS 菜单栏日历。
+      </p>
+      <div class="badges">
+        <span class="badge">macOS 14+</span>
+        <span class="badge">v2.1</span>
+        <span class="badge">SwiftUI 原生</span>
+        <span class="badge">零依赖 · 不联网</span>
+        <span class="badge">不到 1 MB</span>
+      </div>
+      <div class="buttons">
+        <a class="btn btn-primary" href="https://github.com/KatouMegumii/ScrollCal/releases/latest">
+          下载 DMG
+        </a>
+        <a class="btn btn-secondary" href="https://github.com/KatouMegumii/ScrollCal/releases/latest">
+          ZIP 版
+        </a>
+        <a class="btn btn-secondary" href="https://github.com/KatouMegumii/ScrollCal">源码</a>
+      </div>
+      <p class="hint">
+        未做 Apple 公证，首次打开请右键点 App → 「打开」，或执行
+        <code>xattr -dr com.apple.quarantine /Applications/ScrollCal.app</code>
+      </p>
+    </div>
+  </div>
+
+  <section id="shots">
+    <h2>界面</h2>
+    <p class="sub">一屏正好一个月，滚轮/触控板可以一路滚下去，每格下面是农历、节气或节日。</p>
+    <div class="shots">
+      <figure>
+        <img src="assets/screenshot-light.png" alt="浅色模式">
+        <figcaption>浅色模式</figcaption>
+      </figure>
+      <figure>
+        <img src="assets/screenshot-dark.png" alt="深色模式">
+        <figcaption>深色模式</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>特性</h2>
+    <p class="sub">够用就好，不做多余的事。</p>
+    <div class="grid">
+      <div class="card">
+        <h3>连续滚动，不再只有当月</h3>
+        <p>系统小组件只能显示固定一个月。ScrollCal 可以前后滚 61 个月，顶部年月自动跟随。</p>
+      </div>
+      <div class="card">
+        <h3>一屏一个月</h3>
+        <p>视口高度正好一个月的高度，滚动的边界感很清楚，不会停在半格上。</p>
+      </div>
+      <div class="card">
+        <h3>滚动倍率可调</h3>
+        <p>右上角 <code>1.0×</code> 一点即切：0.2× / 0.3× / 0.5× / 0.8× / 1.0× / 1.5× / 2.0× / 3.0×，鼠标和触控板各调各的手感。</p>
+      </div>
+      <div class="card">
+        <h3>农历 · 节气 · 节日</h3>
+        <p>每格下方小字，优先级：公历节日 → 农历节日 → 除夕 → 二十四节气 → 农历初一（显示月名）→ 农历日。</p>
+      </div>
+      <div class="card">
+        <h3>非本月日期灰掉</h3>
+        <p>前后补位不是留空，跨月看几天很方便，又不会喧宾夺主。</p>
+      </div>
+      <div class="card">
+        <h3>原生、轻、不联网</h3>
+        <p>纯 SwiftUI + AppKit，无第三方依赖、无任何网络请求，也没有 Dock 图标。开机自启用系统原生 SMAppService。</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>安装</h2>
+    <p class="sub">下载后三步即可用上。</p>
+    <ol class="steps">
+      <li>从 <a href="https://github.com/KatouMegumii/ScrollCal/releases/latest">Releases</a> 下载 <code>ScrollCal-x.y.dmg</code>（或 <code>.zip</code>）。</li>
+      <li>打开 DMG，把 <code>ScrollCal.app</code> 拖进「应用程序」。</li>
+      <li>首次打开前先去掉隔离标记（见下），然后打开 App，菜单栏就会出现 <code>📅</code> 图标。</li>
+    </ol>
+    <div class="note">
+      <strong>为什么需要这一步：</strong>项目没有 Apple 开发者签名/公证，macOS 首次会拦截未识别的开发者。
+      两种放行方式：在「访达」里<strong>右键点 App → 打开 → 再点「打开」</strong>；或者终端执行一次
+      <code>xattr -dr com.apple.quarantine /Applications/ScrollCal.app</code>。
+    </div>
+  </section>
+
+  <section id="usage">
+    <h2>使用</h2>
+    <table>
+      <tr><th>位置</th><th>功能</th></tr>
+      <tr><td>第一行左</td><td>农历今日（如 <code>八月初八</code>），点击回到本月，快捷键 <code>⌘T</code></td></tr>
+      <tr><td>第一行右</td><td>滚动倍率 · 打开「日历」App · 开机自启 · 退出 <code>⌘Q</code></td></tr>
+      <tr><td>第二行</td><td>当前年月 + <code>▲</code> <code>▼</code> 精确翻月</td></tr>
+      <tr><td>日历区</td><td>滚轮 / 触控板连续滚动</td></tr>
+    </table>
+  </section>
+
+  <section id="build">
+    <h2>从源码构建</h2>
+    <p class="sub">只需要 Xcode Command Line Tools，<strong>不需要完整 Xcode</strong>。</p>
+<pre><code>git clone https://github.com/KatouMegumii/ScrollCal.git
+cd ScrollCal
+./build.sh      # 编译并打包到 build/ScrollCal.app
+./install.sh    # 可选：装到 /Applications 并重启</code></pre>
+    <p class="sub" style="margin-top:22px">仓库里还带了三个开发工具：</p>
+    <table>
+      <tr><th>工具</th><th>用途</th></tr>
+      <tr><td><code>Tools/CalendarDump</code></td><td>命令行打印某月网格，校验农历 / 节气 / 节日</td></tr>
+      <tr><td><code>Tools/Preview</code></td><td>离屏把面板渲染成 PNG，改样式时不用点菜单栏</td></tr>
+      <tr><td><code>Tools/make-icon.sh</code></td><td>生成 App 图标（iconset → icns）</td></tr>
+    </table>
+  </section>
+
+  <section id="how">
+    <h2>农历和节气是怎么算的</h2>
+    <p class="sub">不查表、不联网、不依赖第三方库。</p>
+    <div class="grid">
+      <div class="card">
+        <h3>农历</h3>
+        <p>Foundation 内置的 Chinese calendar 换算，含闰月判定。</p>
+      </div>
+      <div class="card">
+        <h3>二十四节气</h3>
+        <p>自实现 Meeus《Astronomical Algorithms》低精度太阳视黄经求解，精度约 0.01°（约 15 分钟）。</p>
+      </div>
+      <div class="card">
+        <h3>节日</h3>
+        <p>公历固定节日 + 按星期推算（母亲节 / 父亲节 / 感恩节）+ 农历节日 + 除夕。</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>© 2026 ScrollCal · MIT License</span>
+    <span>
+      <a href="https://github.com/KatouMegumii/ScrollCal">GitHub</a> ·
+      <a href="https://github.com/KatouMegumii/ScrollCal/releases/latest">Releases</a> ·
+      <a href="https://github.com/KatouMegumii/ScrollCal/issues">Issues</a>
+    </span>
+  </footer>
+</div>
+
+</body>
+</html>
