@@ -162,6 +162,36 @@ private struct WindowProbeBackground: ViewModifier {
     }
 }
 
+/// 交互自检脚本读取的状态快照（Tools/InteractionTest）
+enum PanelDebugState {
+    static var bodyEvaluations = 0
+    static var pickerOpen = false
+    static var factor: Double = 1.0
+    static var scrollOffset: CGFloat = 0
+}
+
+/// 日历区是否关闭命中测试。
+/// 必须关：滚出视口的月份块会被 .offset 推到按钮上方，而 .clipped() 只裁绘制不裁命中，
+/// 于是看不见的格子会吃掉按钮的点击。默认关闭，REPRO_OVERLAY_BUG 用于复现旧行为做对比。
+private struct CalendarHitTest: ViewModifier {
+    static var reproOverlayBug: Bool {
+        #if REPRO_OVERLAY_BUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if Self.reproOverlayBug {
+            content
+        } else {
+            content.allowsHitTesting(false)
+        }
+    }
+}
+
 // MARK: - 日期格子
 
 private struct DayCell: View {
@@ -344,6 +374,7 @@ struct CalendarPanel: View {
     }
 
     var body: some View {
+        let _ = recordDebugState()
         VStack(spacing: 0) {
             // 第一行：农历今日 / 滚动倍率 / 打开日历 / 开机自启 / 退出
             HStack(spacing: 2) {
@@ -480,6 +511,7 @@ struct CalendarPanel: View {
             }
             .frame(width: Layout.contentWidth, height: Layout.viewportHeight, alignment: .top)
             .clipped()
+            .modifier(CalendarHitTest())
             .padding(.horizontal, Layout.horizontalPadding)
         }
         .frame(width: Layout.panelWidth)
@@ -501,6 +533,14 @@ struct CalendarPanel: View {
         Rectangle()
             .fill(Color.primary.opacity(0.08))
             .frame(height: 1)
+    }
+
+    /// 给交互自检脚本记录当前状态（本身不触发重绘）
+    private func recordDebugState() {
+        PanelDebugState.bodyEvaluations += 1
+        PanelDebugState.pickerOpen = showFactorPicker
+        PanelDebugState.factor = scrollFactor
+        PanelDebugState.scrollOffset = scrollOffset
     }
 
     // MARK: 滚动
@@ -602,7 +642,7 @@ struct CalendarPanel: View {
 
 // MARK: - App
 
-#if !PREVIEW
+#if !PREVIEW && !INTERACTION_TEST
 @main
 struct ScrollCalApp: App {
     @StateObject private var clock = Clock()

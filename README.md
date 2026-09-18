@@ -64,10 +64,15 @@ cd ScrollCal
 | --- | --- |
 | `Tools/CalendarDump/` | 命令行打印某月网格，校验农历/节气/节日：`./build/caldump 2026 10` |
 | `Tools/Preview/` | 离屏渲染面板为 PNG，改样式时不用点菜单栏：`./build/preview out.png dark 2026 10` |
+| `Tools/InteractionTest/` | 开真实窗口 + 合成鼠标事件点按钮的自检脚本，验证点击命中与"定位今日" |
 | `Tools/GenerateIcon.swift` + `Tools/make-icon.sh` | 生成 App 图标（iconset → icns），颜色/尺寸可调 |
 
-> 小坑记录：`ImageRenderer` 不渲染 `ScrollView` 的内容，也会给 `NSViewRepresentable` 画"无法渲染"占位符，
-> 所以预览模式下这两处都换成了等价的静态实现（见源码里的 `#if PREVIEW`）。
+> 两个踩坑记录（都写在源码注释里）：
+> 1. `ImageRenderer` 不渲染 `ScrollView` 的内容，也会给 `NSViewRepresentable` 画"无法渲染"占位符，
+>    所以预览模式下这两处都换成了等价的静态实现（见源码里的 `#if PREVIEW`）。
+> 2. 自己维护滚动偏移时，滚出视口的月份块会被 `.offset` 推到上方，而 **`.clipped()` 只裁绘制、不裁命中测试**，
+>    看不见的格子会吃掉上面按钮的点击。所以日历区必须 `.allowsHitTesting(false)`
+>    （用 `Tools/InteractionTest` 加 `-DREPRO_OVERLAY_BUG` 可以复现这个坑）。
 
 ## 农历与节气是怎么算的
 
