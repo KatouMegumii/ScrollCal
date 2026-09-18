@@ -38,6 +38,7 @@ private struct FlatButton<Label: View>: View {
     let shortcut: KeyboardShortcut?
     let activeColor: Color?
     let compact: Bool
+    let fontSize: CGFloat
     let action: () -> Void
     @ViewBuilder let label: () -> Label
 
@@ -48,6 +49,7 @@ private struct FlatButton<Label: View>: View {
         shortcut: KeyboardShortcut? = nil,
         activeColor: Color? = nil,
         compact: Bool = false,
+        fontSize: CGFloat = 11,
         action: @escaping () -> Void,
         @ViewBuilder label: @escaping () -> Label
     ) {
@@ -55,6 +57,7 @@ private struct FlatButton<Label: View>: View {
         self.shortcut = shortcut
         self.activeColor = activeColor
         self.compact = compact
+        self.fontSize = fontSize
         self.action = action
         self.label = label
     }
@@ -67,10 +70,10 @@ private struct FlatButton<Label: View>: View {
     var body: some View {
         Button(action: action) {
             label()
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: fontSize, weight: .medium))
                 .foregroundStyle(foreground)
-                .padding(.horizontal, compact ? 4 : 6)
-                .padding(.vertical, 3)
+                .padding(.horizontal, compact ? 4 : fontSize * 0.55)
+                .padding(.vertical, compact ? 3 : fontSize * 0.38)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
@@ -159,6 +162,36 @@ private struct WindowProbeBackground: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// 离屏预览用的假滑块：ImageRenderer 渲染不了原生 Slider（会画"无法渲染"占位符）
+private struct SliderMock: View {
+    let value: Double
+    let range: ClosedRange<Double>
+
+    var body: some View {
+        GeometryReader { geometry in
+            let fraction = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+            let knob: CGFloat = 14
+            let travel = max(0, geometry.size.width - knob)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.14))
+                    .frame(height: 4)
+                    .frame(maxHeight: .infinity)
+
+                Circle()
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+                    .frame(width: knob, height: knob)
+                    .offset(x: travel * fraction)
+                    .frame(maxHeight: .infinity)
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .frame(height: 18)
     }
 }
 
@@ -303,8 +336,8 @@ struct CalendarPanel: View {
 
     private let monthsBack = 36
     private let monthsForward = 24
-    /// 倍率预设档位
-    private let presetFactors: [Double] = [0.2, 0.5, 0.8, 1.0, 1.5, 2.0]
+    /// 滚动倍率范围（滑块）
+    static let factorRange: ClosedRange<Double> = 0.2...2.0
 
     @State private var calendar: Calendar = {
         var calendar = Calendar.current
@@ -361,6 +394,8 @@ struct CalendarPanel: View {
     }
 
     private var factorLabel: String { factorText(scrollFactor) }
+    private var minFactorText: String { factorText(Self.factorRange.lowerBound) }
+    private var maxFactorText: String { factorText(Self.factorRange.upperBound) }
 
     private func factorText(_ value: Double) -> String {
         String(format: "%.1f×", value)
@@ -376,11 +411,12 @@ struct CalendarPanel: View {
     var body: some View {
         let _ = recordDebugState()
         VStack(spacing: 0) {
-            // 第一行：农历今日 / 滚动倍率 / 打开日历 / 开机自启 / 退出
+            // 第一行：农历今日 / 滚动倍率 / 打开日历 / 开机自启 / 退出（比其它行大 25%）
             HStack(spacing: 2) {
                 FlatButton(
                     help: "定位今日 · 农历\(todayLunarText)（⌘T）",
-                    shortcut: KeyboardShortcut("t", modifiers: .command)
+                    shortcut: KeyboardShortcut("t", modifiers: .command),
+                    fontSize: 14
                 ) {
                     jumpToToday()
                 } label: {
@@ -390,76 +426,80 @@ struct CalendarPanel: View {
                 Spacer(minLength: 4)
 
                 FlatButton(
-                    help: showFactorPicker ? "收起倍率选择" : "调整滚动倍率：点开选择",
-                    activeColor: showFactorPicker ? Color.accentColor : nil
+                    help: showFactorPicker ? "收起滚动倍率" : "调整滚动倍率：点开滑块",
+                    activeColor: showFactorPicker ? Color.accentColor : nil,
+                    fontSize: 14
                 ) {
                     withAnimation(.easeOut(duration: 0.15)) { showFactorPicker.toggle() }
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 4) {
                         Text(factorLabel).monospacedDigit()
                         Image(systemName: showFactorPicker ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                     }
                 }
 
-                FlatButton(help: "打开「日历」App") {
+                FlatButton(help: "打开「日历」App", fontSize: 14) {
                     openCalendarApp()
                 } label: {
-                    Image(systemName: "arrow.up.forward.app").font(.system(size: 10))
+                    Image(systemName: "arrow.up.forward.app").font(.system(size: 13))
                 }
 
                 FlatButton(
                     help: launchAtLogin ? "开机自启：已开启（点击关闭）" : "开机自启：未开启（点击开启）",
-                    activeColor: launchAtLogin ? Color.accentColor : nil
+                    activeColor: launchAtLogin ? Color.accentColor : nil,
+                    fontSize: 14
                 ) {
                     toggleLaunchAtLogin()
                 } label: {
                     Image(systemName: launchAtLogin ? "powerplug.fill" : "powerplug")
-                        .font(.system(size: 10))
+                        .font(.system(size: 13))
                 }
 
-                FlatButton(help: "退出 ScrollCal（⌘Q）", shortcut: KeyboardShortcut("q", modifiers: .command)) {
+                FlatButton(
+                    help: "退出 ScrollCal（⌘Q）",
+                    shortcut: KeyboardShortcut("q", modifiers: .command),
+                    fontSize: 14
+                ) {
                     NSApplication.shared.terminate(nil)
                 } label: {
-                    Image(systemName: "power").font(.system(size: 10))
+                    Image(systemName: "power").font(.system(size: 13))
                 }
             }
             .padding(.horizontal, 6)
-            .padding(.vertical, 4)
+            .padding(.vertical, 5)
 
-            // 倍率选择条：不弹新窗口，避免面板失焦（右键菜单在 MenuBarExtra 里不可靠）
+            // 滚动倍率滑块：不弹新窗口（右键菜单在 MenuBarExtra 里会失焦）
             if showFactorPicker {
-                HStack(spacing: 1) {
-                    FlatButton(help: "减小 0.1", compact: true) {
-                        nudgeFactor(-0.1)
-                    } label: {
-                        Image(systemName: "minus").font(.system(size: 9, weight: .semibold))
-                    }
+                HStack(spacing: 8) {
+                    Text(minFactorText)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
 
-                    Spacer(minLength: 0)
+                    #if PREVIEW
+                    SliderMock(value: scrollFactor, range: Self.factorRange)
+                    #else
+                    Slider(
+                        value: Binding(
+                            get: { scrollFactor },
+                            set: { setScrollFactor($0) }
+                        ),
+                        in: Self.factorRange,
+                        step: 0.1
+                    )
+                    .controlSize(.small)
+                    .help("滚动倍率 \(factorLabel)")
+                    #endif
 
-                    ForEach(presetFactors, id: \.self) { value in
-                        FlatButton(
-                            help: "设为 \(factorText(value))",
-                            activeColor: abs(value - scrollFactor) < 0.001 ? Color.accentColor : nil,
-                            compact: true
-                        ) {
-                            setScrollFactor(value)
-                        } label: {
-                            Text(factorText(value)).monospacedDigit()
-                        }
-                    }
-
-                    Spacer(minLength: 0)
-
-                    FlatButton(help: "增大 0.1", compact: true) {
-                        nudgeFactor(0.1)
-                    } label: {
-                        Image(systemName: "plus").font(.system(size: 9, weight: .semibold))
-                    }
+                    Text(maxFactorText)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
                 }
-                .padding(.horizontal, 6)
-                .padding(.bottom, 5)
+                .padding(.horizontal, 10)
+                .padding(.top, 2)
+                .padding(.bottom, 7)
             }
 
             hairline
@@ -467,33 +507,34 @@ struct CalendarPanel: View {
             // 第二行：年 + 月，右侧上/下月
             HStack(spacing: 2) {
                 Text(visibleMonthTitle)
-                    .font(.system(size: 13, weight: .semibold))
-                    .padding(.leading, 4)
+                    .font(.system(size: 15, weight: .semibold))
+                    .padding(.leading, 5)
 
                 Spacer(minLength: 4)
 
-                FlatButton(help: "上一月") { stepMonth(-1) } label: {
-                    Image(systemName: "chevron.up").font(.system(size: 10, weight: .semibold))
+                FlatButton(help: "上一月", fontSize: 12) { stepMonth(-1) } label: {
+                    Image(systemName: "chevron.up").font(.system(size: 11, weight: .semibold))
                 }
 
-                FlatButton(help: "下一月") { stepMonth(1) } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                FlatButton(help: "下一月", fontSize: 12) { stepMonth(1) } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
                 }
             }
             .padding(.horizontal, 6)
-            .padding(.vertical, 3)
+            .padding(.vertical, 7)
 
             // 第三行：星期
             HStack(spacing: 0) {
                 ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol)
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, Layout.horizontalPadding)
-            .padding(.bottom, 3)
+            .padding(.top, 2)
+            .padding(.bottom, 7)
 
             hairline
 
@@ -575,14 +616,9 @@ struct CalendarPanel: View {
     }
 
     private func setScrollFactor(_ value: Double) {
-        scrollFactor = value
-        ScrollSettings.factor = value
-    }
-
-    /// 每次点 ± 调整 0.1（范围 0.1×–3.0×）
-    private func nudgeFactor(_ delta: Double) {
-        let stepped = ((scrollFactor + delta) * 10).rounded() / 10
-        setScrollFactor(min(3.0, max(0.1, stepped)))
+        let clamped = min(Self.factorRange.upperBound, max(Self.factorRange.lowerBound, value))
+        scrollFactor = clamped
+        ScrollSettings.factor = clamped
     }
 
     // MARK: 滚轮监听
