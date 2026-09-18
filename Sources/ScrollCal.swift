@@ -37,6 +37,7 @@ private struct FlatButton<Label: View>: View {
     let help: String
     let shortcut: KeyboardShortcut?
     let activeColor: Color?
+    let compact: Bool
     let action: () -> Void
     @ViewBuilder let label: () -> Label
 
@@ -46,12 +47,14 @@ private struct FlatButton<Label: View>: View {
         help: String,
         shortcut: KeyboardShortcut? = nil,
         activeColor: Color? = nil,
+        compact: Bool = false,
         action: @escaping () -> Void,
         @ViewBuilder label: @escaping () -> Label
     ) {
         self.help = help
         self.shortcut = shortcut
         self.activeColor = activeColor
+        self.compact = compact
         self.action = action
         self.label = label
     }
@@ -66,7 +69,7 @@ private struct FlatButton<Label: View>: View {
             label()
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(foreground)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, compact ? 4 : 6)
                 .padding(.vertical, 3)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -270,8 +273,8 @@ struct CalendarPanel: View {
 
     private let monthsBack = 36
     private let monthsForward = 24
-    /// 可选的滚动倍率
-    private let scrollFactors: [Double] = [0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 3.0]
+    /// 倍率预设档位
+    private let presetFactors: [Double] = [0.2, 0.5, 0.8, 1.0, 1.5, 2.0]
 
     @State private var calendar: Calendar = {
         var calendar = Calendar.current
@@ -281,6 +284,8 @@ struct CalendarPanel: View {
     @State private var launchAtLogin = false
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollFactor: Double = ScrollSettings.factor
+    /// 倍率选择条是否展开（环境变量只用于离屏预览时展开它）
+    @State private var showFactorPicker = ProcessInfo.processInfo.environment["SCROLLCAL_PICKER"] == "1"
 
     /// 面板的"当前时间"（正常运行时跟随系统时钟）
     private var referenceDate: Date { previewMonth == nil ? clock.now : previewMonth! }
@@ -325,8 +330,10 @@ struct CalendarPanel: View {
         ChineseCalendar.lunarDateText(for: referenceDate, in: calendar)
     }
 
-    private var factorLabel: String {
-        String(format: "%.1f×", scrollFactor)
+    private var factorLabel: String { factorText(scrollFactor) }
+
+    private func factorText(_ value: Double) -> String {
+        String(format: "%.1f×", value)
     }
 
     private var weekdaySymbols: [String] {
@@ -351,18 +358,16 @@ struct CalendarPanel: View {
 
                 Spacer(minLength: 4)
 
-                FlatButton(help: "滚动倍率 \(factorLabel)：左键点一下换下一档，右键选择") {
-                    cycleScrollFactor()
+                FlatButton(
+                    help: showFactorPicker ? "收起倍率选择" : "调整滚动倍率：点开选择",
+                    activeColor: showFactorPicker ? Color.accentColor : nil
+                ) {
+                    withAnimation(.easeOut(duration: 0.15)) { showFactorPicker.toggle() }
                 } label: {
-                    Text(factorLabel).monospacedDigit()
-                }
-                .contextMenu {
-                    ForEach(scrollFactors, id: \.self) { value in
-                        Button {
-                            setScrollFactor(value)
-                        } label: {
-                            Text(String(format: "%.1f×", value))
-                        }
+                    HStack(spacing: 3) {
+                        Text(factorLabel).monospacedDigit()
+                        Image(systemName: showFactorPicker ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 8, weight: .semibold))
                     }
                 }
 
@@ -390,6 +395,41 @@ struct CalendarPanel: View {
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
+
+            // 倍率选择条：不弹新窗口，避免面板失焦（右键菜单在 MenuBarExtra 里不可靠）
+            if showFactorPicker {
+                HStack(spacing: 1) {
+                    FlatButton(help: "减小 0.1", compact: true) {
+                        nudgeFactor(-0.1)
+                    } label: {
+                        Image(systemName: "minus").font(.system(size: 9, weight: .semibold))
+                    }
+
+                    Spacer(minLength: 0)
+
+                    ForEach(presetFactors, id: \.self) { value in
+                        FlatButton(
+                            help: "设为 \(factorText(value))",
+                            activeColor: abs(value - scrollFactor) < 0.001 ? Color.accentColor : nil,
+                            compact: true
+                        ) {
+                            setScrollFactor(value)
+                        } label: {
+                            Text(factorText(value)).monospacedDigit()
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    FlatButton(help: "增大 0.1", compact: true) {
+                        nudgeFactor(0.1)
+                    } label: {
+                        Image(systemName: "plus").font(.system(size: 9, weight: .semibold))
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 5)
+            }
 
             hairline
 
@@ -499,9 +539,10 @@ struct CalendarPanel: View {
         ScrollSettings.factor = value
     }
 
-    private func cycleScrollFactor() {
-        let current = scrollFactors.firstIndex(where: { abs($0 - scrollFactor) < 0.001 }) ?? 0
-        setScrollFactor(scrollFactors[(current + 1) % scrollFactors.count])
+    /// 每次点 ± 调整 0.1（范围 0.1×–3.0×）
+    private func nudgeFactor(_ delta: Double) {
+        let stepped = ((scrollFactor + delta) * 10).rounded() / 10
+        setScrollFactor(min(3.0, max(0.1, stepped)))
     }
 
     // MARK: 滚轮监听
