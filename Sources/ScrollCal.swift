@@ -94,30 +94,65 @@ private struct OptionalShortcut: ViewModifier {
     }
 }
 
-/// 拿到面板所在的 NSWindow（滚轮事件靠它判断"这颗事件是不是面板上的"）
-private struct WindowReader: NSViewRepresentable {
+// MARK: - 滚轮设置与全局监听
+// 全部放在静态存储里：滚轮回调永远读到最新的倍率，
+// 也避免"每次渲染都往 @State 写窗口"造成的无限重绘。
+
+private enum ScrollSettings {
+    /// 滚动倍率
+    static var factor: Double = 1.0
+    /// 面板所在窗口（判断滚轮事件是否落在面板上）
+    static weak var window: NSWindow?
+    /// 全局只保留一个监听器
+    private static var monitor: Any?
+
+    static func install(_ handle: @escaping (NSEvent) -> Bool) {
+        remove()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            handle(event) ? nil : event
+        }
+    }
+
+    static func remove() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+}
+
+/// 只在真正加入/离开窗口时回调，不做任何会触发重绘的写入
+private final class WindowProbeView: NSView {
+    var onWindow: ((NSWindow?) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindow?(window)
+    }
+}
+
+private struct WindowProbe: NSViewRepresentable {
     let onWindow: (NSWindow?) -> Void
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+    func makeNSView(context: Context) -> WindowProbeView {
+        let view = WindowProbeView()
+        view.onWindow = onWindow
         DispatchQueue.main.async { onWindow(view.window) }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { onWindow(nsView.window) }
+    func updateNSView(_ nsView: WindowProbeView, context: Context) {
+        nsView.onWindow = onWindow
     }
 }
 
 /// 离屏预览时不要挂 NSViewRepresentable，否则 ImageRenderer 会画"无法渲染"占位符
-private struct WindowReaderBackground: ViewModifier {
+private struct WindowProbeBackground: ViewModifier {
     let enabled: Bool
     let onWindow: (NSWindow?) -> Void
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if enabled {
-            content.background(WindowReader(onWindow: onWindow))
+            content.background(WindowProbe(onWindow: onWindow))
         } else {
             content
         }
@@ -245,9 +280,7 @@ struct CalendarPanel: View {
     }()
     @State private var launchAtLogin = false
     @State private var scrollOffset: CGFloat = 0
-    @State private var scrollFactor: Double = 1.0
-    @State private var panelWindow: NSWindow?
-    @State private var wheelMonitor: Any?
+    @State private var scrollFactor: Double = ScrollSettings.factor
 
     /// 面板的"当前时间"（正常运行时跟随系统时钟）
     private var referenceDate: Date { previewMonth == nil ? clock.now : previewMonth! }
@@ -318,10 +351,19 @@ struct CalendarPanel: View {
 
                 Spacer(minLength: 4)
 
-                FlatButton(help: "滚动倍率 \(factorLabel)（点击切换 \(scrollFactors.map { String(format: "%.1f", $0) }.joined(separator: " / "))）") {
+                FlatButton(help: "滚动倍率 \(factorLabel)：左键点一下换下一档，右键选择") {
                     cycleScrollFactor()
                 } label: {
                     Text(factorLabel).monospacedDigit()
+                }
+                .contextMenu {
+                    ForEach(scrollFactors, id: \.self) { value in
+                        Button {
+                            setScrollFactor(value)
+                        } label: {
+                            Text(String(format: "%.1f×", value))
+                        }
+                    }
                 }
 
                 FlatButton(help: "打开「日历」App") {
@@ -401,16 +443,17 @@ struct CalendarPanel: View {
             .padding(.horizontal, Layout.horizontalPadding)
         }
         .frame(width: Layout.panelWidth)
-        .modifier(WindowReaderBackground(enabled: !isPreview) { window in
-            panelWindow = window
+        .modifier(WindowProbeBackground(enabled: !isPreview) { window in
+            ScrollSettings.window = window      // 静态写入，不会触发重绘
         })
         .onAppear {
             refreshLaunchAtLogin()
             installWheelMonitor()
+            scrollFactor = ScrollSettings.factor     // 与静态设置保持一致
             scrollOffset = min(CGFloat(todayIndex) * Layout.monthBlockHeight, maxOffset)
         }
         .onDisappear {
-            removeWheelMonitor()
+            ScrollSettings.remove()
         }
     }
 
@@ -423,7 +466,8 @@ struct CalendarPanel: View {
     // MARK: 滚动
 
     private func applyScroll(delta: CGFloat, animated: Bool) {
-        let next = min(max(0, scrollOffset - delta * CGFloat(scrollFactor)), maxOffset)
+        // 倍率从静态存储读取，保证永远是当前设置
+        let next = min(max(0, scrollOffset - delta * CGFloat(ScrollSettings.factor)), maxOffset)
         guard abs(next - scrollOffset) > 0.01 else { return }
         if animated {
             withAnimation(.easeOut(duration: 0.11)) { scrollOffset = next }
@@ -450,9 +494,14 @@ struct CalendarPanel: View {
         scroll(to: todayIndex, animated: true)
     }
 
+    private func setScrollFactor(_ value: Double) {
+        scrollFactor = value
+        ScrollSettings.factor = value
+    }
+
     private func cycleScrollFactor() {
         let current = scrollFactors.firstIndex(where: { abs($0 - scrollFactor) < 0.001 }) ?? 0
-        scrollFactor = scrollFactors[(current + 1) % scrollFactors.count]
+        setScrollFactor(scrollFactors[(current + 1) % scrollFactors.count])
     }
 
     // MARK: 滚轮监听
@@ -460,9 +509,8 @@ struct CalendarPanel: View {
 
     private func installWheelMonitor() {
         #if !PREVIEW
-        guard wheelMonitor == nil else { return }
-        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            guard let window = panelWindow, event.window === window else { return event }
+        ScrollSettings.install { event in
+            guard let window = ScrollSettings.window, event.window === window else { return false }
 
             if event.hasPreciseScrollingDeltas {
                 // 触控板：连续像素级增量，直接跟手
@@ -471,15 +519,8 @@ struct CalendarPanel: View {
                 // 鼠标滚轮：一格是"行"单位，放大到接近系统的滚动距离
                 applyScroll(delta: event.scrollingDeltaY * 12, animated: true)
             }
-            return nil   // 消费掉，避免系统再滚一次
+            return true   // 消费掉，避免系统再滚一次
         }
-        #endif
-    }
-
-    private func removeWheelMonitor() {
-        #if !PREVIEW
-        if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
-        wheelMonitor = nil
         #endif
     }
 
