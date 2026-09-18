@@ -338,6 +338,9 @@ struct CalendarPanel: View {
     private let monthsForward = 24
     /// 滚动倍率范围（滑块）
     static let factorRange: ClosedRange<Double> = 0.2...2.0
+    /// 第一行（农历日期 + 四个按钮）的字号与图标大小
+    static let toolbarFont: CGFloat = 12.5
+    static let toolbarIcon: CGFloat = 11.5
 
     @State private var calendar: Calendar = {
         var calendar = Calendar.current
@@ -416,7 +419,7 @@ struct CalendarPanel: View {
                 FlatButton(
                     help: "定位今日 · 农历\(todayLunarText)（⌘T）",
                     shortcut: KeyboardShortcut("t", modifiers: .command),
-                    fontSize: 14
+                    fontSize: Self.toolbarFont
                 ) {
                     jumpToToday()
                 } label: {
@@ -428,7 +431,7 @@ struct CalendarPanel: View {
                 FlatButton(
                     help: showFactorPicker ? "收起滚动倍率" : "调整滚动倍率：点开滑块",
                     activeColor: showFactorPicker ? Color.accentColor : nil,
-                    fontSize: 14
+                    fontSize: Self.toolbarFont
                 ) {
                     withAnimation(.easeOut(duration: 0.15)) { showFactorPicker.toggle() }
                 } label: {
@@ -439,31 +442,31 @@ struct CalendarPanel: View {
                     }
                 }
 
-                FlatButton(help: "打开「日历」App", fontSize: 14) {
+                FlatButton(help: "打开「日历」App", fontSize: Self.toolbarFont) {
                     openCalendarApp()
                 } label: {
-                    Image(systemName: "arrow.up.forward.app").font(.system(size: 13))
+                    Image(systemName: "arrow.up.forward.app").font(.system(size: Self.toolbarIcon))
                 }
 
                 FlatButton(
                     help: launchAtLogin ? "开机自启：已开启（点击关闭）" : "开机自启：未开启（点击开启）",
                     activeColor: launchAtLogin ? Color.accentColor : nil,
-                    fontSize: 14
+                    fontSize: Self.toolbarFont
                 ) {
                     toggleLaunchAtLogin()
                 } label: {
                     Image(systemName: launchAtLogin ? "powerplug.fill" : "powerplug")
-                        .font(.system(size: 13))
+                        .font(.system(size: Self.toolbarIcon))
                 }
 
                 FlatButton(
                     help: "退出 ScrollCal（⌘Q）",
                     shortcut: KeyboardShortcut("q", modifiers: .command),
-                    fontSize: 14
+                    fontSize: Self.toolbarFont
                 ) {
                     NSApplication.shared.terminate(nil)
                 } label: {
-                    Image(systemName: "power").font(.system(size: 13))
+                    Image(systemName: "power").font(.system(size: Self.toolbarIcon))
                 }
             }
             .padding(.horizontal, 6)
